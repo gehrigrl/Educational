@@ -1,0 +1,131 @@
+---
+  title: "Final Project"
+author: "Gehrig Loughran" 
+output: html_document
+---
+```{r}
+foodstart=read.csv("food_data.csv")
+
+food=foodstart[5:281]
+
+#remove constant columns so PCA works
+food=food[,apply(food, 2, var, na.rm=TRUE) != 0]
+
+#remove classification variables from food
+fg.names=colnames(food)
+which(fg.names=="FARM_TO_SCHOOL09")
+food.noclass=food[-c(200,201)]
+
+#write function to find constant columns
+find_bad <- function(x){max(x) == min(x)}
+bad <- sapply(na.omit(food.noclass), FUN = find_bad)
+bad[bad == TRUE]
+
+names=colnames(food.noclass)
+which(names=="SNAP_OAPP16")
+which(names=="PERPOV10")
+
+pca.food=food.noclass[,-c(54,234)]
+
+pcloads=prcomp(na.omit(pca.food), center=TRUE,scale.=TRUE, retx=TRUE)
+
+
+sd=pcloads[["sdev"]]
+var=sd^2
+totalvar=sum(var)
+percent=(1/totalvar)*var
+screeplot=plot(percent,main="Variance Explained by Each Feature",xlab="Dimension",ylab="Percent Variance Explained")
+
+cumpercent=cumsum(percent)
+plot(cumpercent,xlim=c(0,50),ylim=c(0,1),xlab="Dimension",ylab="Cumulative Percent Variance Explained")
+
+#PCR for obesity rates in 2008
+
+#remove obesity rates/diabetes rates in other years
+names=colnames(pca.food)
+which(names=="PCT_DIABETES_ADULTS08")
+pcr.food=pca.food[,-c(85,86,88)]
+
+smp_size <- floor(0.9 * nrow(pcr.food))
+
+set.seed(5)
+train_ind <- sample(seq_len(nrow(pcr.food)), size = smp_size)
+
+train <- pcr.food[train_ind, ]
+test <- pcr.food[-train_ind, ]
+
+library(pls)
+pcr.model2<-pcr(PCT_OBESE_ADULTS08~., data = train, scale = TRUE,
+                        center = TRUE, validation = "CV", segments = 5)
+
+validationplot(pcr.model2,val.type="MSEP",main="MSEP in Predicting Obesity Rates with PCR")
+
+
+#Calculating Error in Katie Baker's linear model
+subset7=foodstart[c("PCT_DIABETES_ADULTS08", "PCT_FREE_LUNCH09", 
+                      "SODA_PRICE10", "PCT_SNAP12","MILK_PRICE10","CSA12","SNAPSPTH12", 
+                      "FOOD_TAX14", "FSRPTH09", "FOODINSEC_13_15","PC_SNAPBEN10", 
+                      "WICSPTH08", "PCT_NSLP09","PCT_CACFP09","PCT_LACCESS_LOWI10", 
+                      "GROCPTH09","CONVSPTH09", "FARM_TO_SCHOOL09","PCT_WIC09","FDPIR12", 
+                      "PCT_LACCESS_POP10","PCT_REDUCED_LUNCH09", "FMRKT09", "FFRPTH09")]
+smp_size2 <- floor(0.5 * nrow(subset7))
+
+set.seed(7)
+train_ind2 <- sample(seq_len(nrow(subset7)), size = smp_size2)
+
+train2 <- subset7[train_ind, ]
+test2 <- subset7[-train_ind, ]
+
+diabet.train=lm(PCT_DIABETES_ADULTS08~.,data=train2)
+
+#computing MSPE
+yhat2 <- predict(diabet.train, newdata = test2)
+mean((yhat2 - test2$PCT_DIABETES_ADULTS08)^2,na.rm=TRUE)
+var(test2$PCT_DIABETES_ADULTS08)
+
+
+#Calculating Error in Katie Baker's logistic model
+subset3 <- foodstart[c("PCT_DIABETES_ADULTS08", "PCT_OBESE_ADULTS08","FARM_TO_SCHOOL09", "POPLOSS10","FOODINSEC_13_15",  "PERCHLDPOV10", "RECFACPTH09", "CSA12", "FOODHUB16", "FMRKT09", "PC_DIRSALES12", "PCT_LOCLFARM12", "FOOD_TAX14", "SODA_PRICE10", "MILK_PRICE10", "PCT_SNAP12", "PC_SNAPBEN10", "PCT_FREE_LUNCH09", "PCT_NSLP09", "PCT_REDUCED_LUNCH09", "PCT_WIC09", "PCT_CACFP09", "FDPIR12", "FSRPTH09", "FFRPTH09", "WICSPTH08", "SNAPSPTH12", "SPECSPTH09", "CONVSPTH09", "SUPERCPTH09", "GROCPTH09", "PCT_LACCESS_POP10", "PCT_LACCESS_LOWI10", "PCT_LACCESS_SNAP15" )]
+
+smp_size3 <- floor(0.5 * nrow(subset3))
+set.seed(10)
+train_ind3 <- sample(seq_len(nrow(subset3)), size = smp_size3)
+train3 <- subset3[train_ind, ]
+test3 <- subset3[-train_ind, ]
+chldpovglm.train <- glm(PERCHLDPOV10~., family=binomial, data=train3)
+preds=predict(chldpovglm.train,test3,type="response")
+length(preds)
+Fpreds=rep(0,315)
+Fpreds[preds>0.5]="1"
+
+table(Fpreds,test3$PERCHLDPOV10)
+
+
+#KNN on child pov rates
+library(caret)
+subset3=na.omit(subset3)
+subset3$PERCHLDPOV10=as.factor(subset3$PERCHLDPOV10)
+smp_sizek <- floor(0.75 * nrow(subset3))
+
+set.seed(8)
+train_ind3 <- sample(seq_len(nrow(subset3)), size = smp_sizek)
+
+traink <- subset3[train_ind, ]
+testk <- subset3[-train_ind, ]
+
+
+TRC <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+set.seed(3333)
+knn_fit <- train(PERCHLDPOV10 ~., data = traink, method = "knn",
+                 trControl=TRC,
+                 preProcess = c("center", "scale"),
+                 tuneLength = 10,
+                 na.action=na.omit)
+library(class)
+
+model11=knn(traink,testk,traink$PERCHLDPOV10,k=7)
+
+table(model11,testk$PERCHLDPOV10)
+
+```
+
